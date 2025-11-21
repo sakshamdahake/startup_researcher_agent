@@ -1,0 +1,51 @@
+sequenceDiagram
+  participant UI as Streamlit UI
+  participant API as FastAPI
+  participant Worker as Worker (Celery/RQ)
+  participant Agent as Agent Controller
+  participant Planner as Planner (LLM)
+  participant Executor as Executor
+  participant Tool as Tools Registry
+  participant Vec as Vector DB
+  participant LLM as LLM (ChatOpenAI)
+  participant S3 as S3/MinIO
+  participant Redis as Redis
+  participant DB as Postgres
+
+  UI->>API: POST /api/v1/research {query, options, upload_ids}
+  API->>DB: create job row (status=queued)
+  API->>Redis: create job progress stream
+  API->>Worker: enqueue job_id
+  Worker->>Agent: start(job_id)
+  Agent->>Planner: "Plan for query" (calls LLM for high-level plan)
+  Planner-->>Agent: plan = [web_search, fetch, ingest_pdfs, index, retrieve, summarize, synthesize, report]
+  Agent->>Executor: execute(plan)
+  Executor->>Tool: web_search(query)
+  Tool-->>Executor: list(urls)
+  Executor->>Tool: fetch_url(urls[0])
+  Tool-->>Executor: Document(text, metadata)
+  Executor->>Tool: pdf_loader(upload.pdf)
+  Tool-->>Executor: Document(page...)
+  Executor->>Tool: split_and_chunk(Document)
+  Tool-->>Executor: chunks[]
+  Executor->>Tool: embed_and_upsert(chunks)
+  Tool->>Vec: upsert(records)
+  Executor->>Tool: db_retrieve(query)
+  Tool->>Vec: similarity_search -> hits
+  Vec-->>Tool: hits
+  Tool-->>Executor: documents
+  Executor->>Tool: chunk_summarizer(documents)
+  Tool->>LLM: summarizer_prompt
+  LLM-->>Tool: chunk_summaries
+  Tool-->>Executor: summaries
+  Executor->>Tool: synthesizer(summaries, web_findings)
+  Tool->>LLM: synthesis_prompt
+  LLM-->>Tool: synthesis_text
+  Executor->>Tool: final_report(synthesis)
+  Tool->>LLM: final_report_prompt
+  LLM-->>Tool: final_report_json
+  Executor->>S3: save report.json / report.pdf
+  Executor->>DB: update job status (done) + report URL
+  Executor->>Redis: push progress DONE + tokens
+  Executor->>API: trigger webhook / notify
+  API->>UI: client polls / SSE receives completion

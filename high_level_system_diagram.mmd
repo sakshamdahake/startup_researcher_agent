@@ -1,0 +1,74 @@
+flowchart LR
+  subgraph UI
+    A[Streamlit App]
+  end
+
+  subgraph API
+    B[FastAPI Endpoints]
+    B1["POST /api/v1/research"]
+    B2["SSE /api/v1/stream/{job_id}"]
+    B3["GET /api/v1/status/{job_id}"]
+    B4["GET /api/v1/result/{job_id}"]
+    B5["POST /api/v1/upload"]
+    B6["POST /api/v1/webhook/register"]
+    B7["POST/GET /api/v1/chat/{session_id}"]
+  end
+
+  subgraph Orchestration
+    C[Agent Controller]
+    C1["Planner (LLM)"]
+    C2[Executor]
+    C3[Tool Registry]
+  end
+
+  subgraph Tools
+    T1[web_search]
+    T2[fetch_url]
+    T3[pdf_loader]
+    T4[split_and_chunk]
+    T5[embed & upsert]
+    T6[db_retrieve]
+    T7[chunk_summarizer]
+    T8[synthesizer]
+    T9[final_report]
+    T10[calculator]
+  end
+
+  subgraph Infra
+    V["Vector DB (Pinecone/Qdrant)"]
+    E["Embeddings (OpenAI/other)"]
+    S[S3 / MinIO]
+    DB[Postgres]
+    REDIS[Redis]
+    WORKER[Celery/RQ Workers]
+    NOTIF[Webhook/Slack/n8n/Email]
+    MON[Monitoring / Sentry]
+  end
+
+  A -->|submit job| B1
+  B1 --> DB
+  B1 --> REDIS
+  B1 --> WORKER
+  WORKER --> C
+  C --> C1
+  C1 --> C2
+  C2 -->|calls| T1 & T2 & T3 & T4 & T5 & T6 & T7 & T8 & T9 & T10
+  T1 -->|urls| T2
+  T2 -->|Document| T4
+  T3 -->|Document| T4
+  T4 -->|chunks| T5
+  T5 --> V
+  T6 --> V
+  T6 --> T7
+  T7 --> T8
+  T8 --> T9
+  T9 --> S
+  C2 --> REDIS
+  C2 -->|progress| B2
+  C2 --> DB
+  C2 --> NOTIF
+  B2 --> A
+  DB --> A
+  REDIS --> A
+  V --> A
+  MON --> C
